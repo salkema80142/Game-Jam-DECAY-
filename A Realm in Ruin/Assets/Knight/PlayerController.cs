@@ -7,12 +7,18 @@ public class PlayerController : MonoBehaviour
     private Rigidbody2D rb;
     private Animator animator;
     private BoxCollider2D playerCollider;
+    private SpriteRenderer spriteRenderer;
 
+    [Header("Movement Settings")]
+    public float moveSpeed = 7f;
     public float jumpForce = 12f;
     public LayerMask groundLayer;
 
     private bool isGrounded;
     private bool isSliding;
+    private bool jumpPressed;
+
+    private float moveInput;
 
     private Vector2 originalColliderSize;
     private Vector2 originalColliderOffset;
@@ -22,6 +28,7 @@ public class PlayerController : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
         animator = GetComponent<Animator>();
         playerCollider = GetComponent<BoxCollider2D>();
+        spriteRenderer = GetComponent<SpriteRenderer>();
 
         originalColliderSize = playerCollider.size;
         originalColliderOffset = playerCollider.offset;
@@ -29,24 +36,35 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        // Check if the player is touching the ground
-        isGrounded = playerCollider.IsTouchingLayers(groundLayer);
-
         if (Keyboard.current == null) return;
 
-        // Jump with Space
+        // LEFT AND RIGHT MOVEMENT
+        moveInput = 0f;
+
+        if (Keyboard.current.aKey.isPressed)
+            moveInput = -1f;
+
+        if (Keyboard.current.dKey.isPressed)
+            moveInput = 1f;
+
+        // FLIP PLAYER DIRECTION
+        if (moveInput < 0)
+            spriteRenderer.flipX = true;
+        else if (moveInput > 0)
+            spriteRenderer.flipX = false;
+
+        // JUMP
         if (Keyboard.current.spaceKey.wasPressedThisFrame && isGrounded)
         {
-            rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
-            isGrounded = false;
+            jumpPressed = true;
         }
 
-        // Slide with Down Arrow or S
+        // SLIDE
         isSliding = isGrounded &&
-            (Keyboard.current.downArrowKey.isPressed ||
-             Keyboard.current.sKey.isPressed);
+            (Keyboard.current.sKey.isPressed ||
+             Keyboard.current.downArrowKey.isPressed);
 
-        // Change collider size while sliding
+        // SLIDING COLLIDER
         if (isSliding)
         {
             playerCollider.size = new Vector2(
@@ -65,8 +83,64 @@ public class PlayerController : MonoBehaviour
             playerCollider.offset = originalColliderOffset;
         }
 
-        // Update animations
+        // UPDATE ANIMATIONS
         animator.SetBool("IsGrounded", isGrounded);
         animator.SetBool("IsSliding", isSliding);
+        animator.SetBool("IsMoving", moveInput != 0);
+    }
+
+    void FixedUpdate()
+    {
+        // HORIZONTAL MOVEMENT
+        rb.linearVelocity = new Vector2(
+            moveInput * moveSpeed,
+            rb.linearVelocity.y
+        );
+
+        // JUMP
+        if (jumpPressed && isGrounded)
+        {
+            rb.linearVelocity = new Vector2(
+                rb.linearVelocity.x,
+                jumpForce
+            );
+
+            isGrounded = false;
+        }
+
+        jumpPressed = false;
+    }
+
+    void OnCollisionEnter2D(Collision2D collision)
+    {
+        CheckGround(collision);
+    }
+
+    void OnCollisionStay2D(Collision2D collision)
+    {
+        CheckGround(collision);
+    }
+
+    void OnCollisionExit2D(Collision2D collision)
+    {
+        if (((1 << collision.gameObject.layer) & groundLayer.value) != 0)
+        {
+            isGrounded = false;
+        }
+    }
+
+    void CheckGround(Collision2D collision)
+    {
+        if (((1 << collision.gameObject.layer) & groundLayer.value) == 0)
+            return;
+
+        foreach (ContactPoint2D contact in collision.contacts)
+        {
+            if (contact.normal.y > 0.5f)
+            {
+                isGrounded = true;
+                return;
+            }
+        }
     }
 }
