@@ -1,97 +1,99 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+[RequireComponent(typeof(SpriteRenderer))]
 public class EndlessBackgroundGenerator : MonoBehaviour
 {
-    [Header("Background Settings")]
-    public GameObject backgroundPrefab;
+    [Header("Parallax Settings")]
+    [Range(0f, 1f)]
+    public float parallaxSpeed = 0.3f;
 
-    [Header("Tile Size")]
-    public float tileWidth = 20f;
-    public float tileHeight = 12f;
-    public float backgroundY = 0f;
+    [Header("Position Settings")]
+    public float yOffset = 0f;
+    public float zPosition = 5f;
 
-    [Header("Generation Settings")]
-    public float spawnAheadDistance = 30f;
-    public float destroyBehindDistance = 20f;
+    private Camera cam;
+    private Sprite sprite;
+    private float tileWidth;
+    private float tileHeight;
 
-    private Camera mainCamera;
-    private float nextSpawnX;
-
-    private List<GameObject> backgroundTiles =
-        new List<GameObject>();
+    private List<Transform> tiles = new List<Transform>();
 
     void Start()
     {
-        mainCamera = Camera.main;
+        cam = Camera.main;
+        sprite = GetComponent<SpriteRenderer>().sprite;
 
-        nextSpawnX = mainCamera.ViewportToWorldPoint(
-            new Vector3(0, 0, 0)
-        ).x;
-
-        GenerateBackground();
-    }
-
-    void Update()
-    {
-        GenerateBackground();
-        DestroyOldBackground();
-    }
-
-    void GenerateBackground()
-    {
-        float cameraRight = mainCamera.ViewportToWorldPoint(
-            new Vector3(1, 0, 0)
-        ).x;
-
-        float spawnLimit = cameraRight + spawnAheadDistance;
-
-        while (nextSpawnX < spawnLimit)
+        if (cam == null || sprite == null)
         {
-            Vector3 position = new Vector3(
-                nextSpawnX + tileWidth / 2f,
-                backgroundY,
-                5f
-            );
+            Debug.LogError("Camera or background sprite is missing!");
+            enabled = false;
+            return;
+        }
 
-            GameObject tile = Instantiate(
-                backgroundPrefab,
-                position,
-                Quaternion.identity
-            );
+        CreateTiles();
+    }
+
+    void CreateTiles()
+    {
+        float cameraHeight = cam.orthographicSize * 2f;
+
+        // Fit image to camera height while keeping its proportions.
+        float scale = cameraHeight / sprite.bounds.size.y;
+
+        tileWidth = sprite.bounds.size.x * scale;
+        tileHeight = cameraHeight;
+
+        float cameraWidth = cameraHeight * cam.aspect;
+
+        // Create enough copies to cover the camera.
+        int tileCount = Mathf.CeilToInt(
+            cameraWidth / tileWidth
+        ) + 3;
+
+        for (int i = 0; i < tileCount; i++)
+        {
+            GameObject tile = new GameObject("Background Tile");
+
+            SpriteRenderer renderer =
+                tile.AddComponent<SpriteRenderer>();
+
+            renderer.sprite = sprite;
+            renderer.sortingLayerName = "Background";
+            renderer.sortingOrder = -10;
 
             tile.transform.localScale = new Vector3(
-                tileWidth,
-                tileHeight,
-                1f
+                scale, scale, 1f
             );
 
-            backgroundTiles.Add(tile);
-
-            nextSpawnX += tileWidth;
+            tiles.Add(tile.transform);
         }
     }
 
-    void DestroyOldBackground()
+    void LateUpdate()
     {
-        float cameraLeft = mainCamera.ViewportToWorldPoint(
-            new Vector3(0, 0, 0)
-        ).x;
+        float cameraX = cam.transform.position.x;
 
-        for (int i = backgroundTiles.Count - 1; i >= 0; i--)
+        float cameraWidth =
+            cam.orthographicSize * 2f * cam.aspect;
+
+        // Calculate the background's parallax position.
+        float backgroundOffset = cameraX * parallaxSpeed;
+
+        float cameraLeft = cameraX - cameraWidth / 2f;
+
+        float firstTileX =
+            Mathf.Floor(
+                (cameraLeft - backgroundOffset) / tileWidth
+            ) * tileWidth + backgroundOffset;
+
+        for (int i = 0; i < tiles.Count; i++)
         {
-            if (backgroundTiles[i] == null)
-            {
-                backgroundTiles.RemoveAt(i);
-                continue;
-            }
-
-            if (backgroundTiles[i].transform.position.x <
-                cameraLeft - destroyBehindDistance)
-            {
-                Destroy(backgroundTiles[i]);
-                backgroundTiles.RemoveAt(i);
-            }
+            tiles[i].position = new Vector3(
+                firstTileX + tileWidth * (i + 0.5f),
+                cam.transform.position.y + yOffset,
+                cam.transform.position.z + zPosition
+            );
         }
     }
 }

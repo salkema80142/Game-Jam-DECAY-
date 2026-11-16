@@ -3,41 +3,68 @@ using System.Collections.Generic;
 
 public class FloorGenerator : MonoBehaviour
 {
-    [Header("Starting Position")]
-    public Vector2 startingPosition = new Vector2(0, 0);
-
-    [Header("Platform Settings")]
+    [Header("Ground")]
     public GameObject groundPrefab;
-    public float platformWidth = 1f;
-    public float gapBetweenPlatforms = 0f;
+    public float groundWidth = 5f;
+    public float groundY = 0f;
 
-    [Header("Generation Settings")]
-    public float spawnAheadDistance = 15f;
-    public float destroyBehindDistance = 5f;
+    [Header("Parkour Platforms")]
+    public GameObject platformPrefab;
+    public float platformWidth = 3f;
+    public float platformHeight = 1.2f;
+
+    [Header("Slide Obstacles")]
+    public GameObject slideObstaclePrefab;
+    public float obstacleY = 1.5f;
+
+    [Header("Course Settings")]
+    public int sectionLength = 5;
+    public float gapSize = 5f;
+    public float spawnAheadDistance = 35f;
+    public float destroyBehindDistance = 20f;
+
+    [Header("Starting Position")]
+    public Vector2 startingPosition = Vector2.zero;
 
     private Camera mainCamera;
     private float nextSpawnX;
+    private int lastSection = -1;
 
-    private List<GameObject> platforms =
+    private List<GameObject> spawnedObjects =
         new List<GameObject>();
 
     void Start()
     {
         mainCamera = Camera.main;
 
-        // Start at your chosen X position
+        if (mainCamera == null || groundPrefab == null)
+        {
+            Debug.LogError("Assign the ground prefab and Main Camera!");
+            enabled = false;
+            return;
+        }
+
         nextSpawnX = startingPosition.x;
 
-        GeneratePlatforms();
+        // Create a safe starting platform.
+        for (int i = 0; i < 4; i++)
+        {
+            SpawnGround(nextSpawnX);
+            nextSpawnX += groundWidth;
+        }
+
+        // Start generating parkour after the starting platform.
+        GenerateCourse();
     }
+
 
     void Update()
     {
-        GeneratePlatforms();
-        DestroyOldPlatforms();
+        GenerateCourse();
+        DestroyOldObjects();
     }
 
-    void GeneratePlatforms()
+    void GenerateCourse()
     {
         float cameraRight = mainCamera.ViewportToWorldPoint(
             new Vector3(1, 0, 0)
@@ -47,43 +74,176 @@ public class FloorGenerator : MonoBehaviour
 
         while (nextSpawnX < spawnLimit)
         {
-            Vector3 spawnPosition = new Vector3(
-                nextSpawnX + platformWidth / 2f,
-                startingPosition.y,
-                0
-            );
+            // Pick a new course section.
+            int section = Random.Range(0, 4);
 
-            GameObject platform = Instantiate(
-                groundPrefab,
-                spawnPosition,
-                Quaternion.identity
-            );
+            // Avoid repeating the same section.
+            if (section == lastSection)
+                section = (section + 1) % 4;
 
-            platforms.Add(platform);
+            lastSection = section;
 
-            nextSpawnX += platformWidth + gapBetweenPlatforms;
+            switch (section)
+            {
+                case 0:
+                    GenerateNormalSection();
+                    break;
+
+                case 1:
+                    GenerateJumpSection();
+                    break;
+
+                case 2:
+                    GeneratePlatformSection();
+                    break;
+
+                case 3:
+                    GenerateSlideSection();
+                    break;
+            }
         }
     }
 
-    void DestroyOldPlatforms()
+    // NORMAL RUNNING SECTION
+    void GenerateNormalSection()
+    {
+        for (int i = 0; i < sectionLength; i++)
+        {
+            SpawnGround(nextSpawnX);
+            nextSpawnX += groundWidth;
+        }
+    }
+
+    // JUMP OVER A GAP
+    void GenerateJumpSection()
+    {
+        SpawnGround(nextSpawnX);
+
+        nextSpawnX += groundWidth;
+
+        // Leave a gap with no ground.
+        nextSpawnX += gapSize;
+
+        // Spawn landing ground.
+        for (int i = 0; i < 3; i++)
+        {
+            SpawnGround(nextSpawnX);
+            nextSpawnX += groundWidth;
+        }
+    }
+
+    // RAISED PARKOUR PLATFORMS
+    void GeneratePlatformSection()
+    {
+        SpawnGround(nextSpawnX);
+
+        nextSpawnX += groundWidth;
+
+        for (int i = 0; i < 4; i++)
+        {
+            float height = groundY +
+                platformHeight * (i % 2 == 0 ? 1 : 2);
+
+            SpawnPlatform(
+                nextSpawnX + platformWidth / 2f,
+                height
+            );
+
+            nextSpawnX += platformWidth + 1f;
+        }
+
+        // Safe landing ground.
+        SpawnGround(nextSpawnX);
+        nextSpawnX += groundWidth;
+    }
+
+    // SLIDE UNDER OBSTACLES
+    void GenerateSlideSection()
+    {
+        for (int i = 0; i < sectionLength; i++)
+        {
+            SpawnGround(nextSpawnX);
+
+            if (i == 2 && slideObstaclePrefab != null)
+            {
+                SpawnObstacle(
+                    nextSpawnX + groundWidth / 2f
+                );
+            }
+
+            nextSpawnX += groundWidth;
+        }
+    }
+
+    void SpawnGround(float x)
+    {
+        Vector3 position = new Vector3(
+            x + groundWidth / 2f,
+            groundY,
+            0f
+        );
+
+        GameObject ground = Instantiate(
+            groundPrefab,
+            position,
+            Quaternion.identity
+        );
+
+        spawnedObjects.Add(ground);
+    }
+
+    void SpawnPlatform(float x, float y)
+    {
+        if (platformPrefab == null)
+            return;
+
+        Vector3 position = new Vector3(x, y, 0f);
+
+        GameObject platform = Instantiate(
+            platformPrefab,
+            position,
+            Quaternion.identity
+        );
+
+        spawnedObjects.Add(platform);
+    }
+
+    void SpawnObstacle(float x)
+    {
+        Vector3 position = new Vector3(
+            x,
+            obstacleY,
+            0f
+        );
+
+        GameObject obstacle = Instantiate(
+            slideObstaclePrefab,
+            position,
+            Quaternion.identity
+        );
+
+        spawnedObjects.Add(obstacle);
+    }
+
+    void DestroyOldObjects()
     {
         float cameraLeft = mainCamera.ViewportToWorldPoint(
             new Vector3(0, 0, 0)
         ).x;
 
-        for (int i = platforms.Count - 1; i >= 0; i--)
+        for (int i = spawnedObjects.Count - 1; i >= 0; i--)
         {
-            if (platforms[i] == null)
+            if (spawnedObjects[i] == null)
             {
-                platforms.RemoveAt(i);
+                spawnedObjects.RemoveAt(i);
                 continue;
             }
 
-            if (platforms[i].transform.position.x <
+            if (spawnedObjects[i].transform.position.x <
                 cameraLeft - destroyBehindDistance)
             {
-                Destroy(platforms[i]);
-                platforms.RemoveAt(i);
+                Destroy(spawnedObjects[i]);
+                spawnedObjects.RemoveAt(i);
             }
         }
     }
